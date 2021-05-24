@@ -47,12 +47,12 @@ if len(img_list) != 0:
     img = Image.open(st_img)
     if combine:
       img = tfms(img)
-      img = torch.unsqueeze(img, 0)
+      img = torch.unsqueeze(img, 0).to(device)
       res += model(img)
       bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
     else:
       img = tfms(img)
-      img = torch.unsqueeze(img, 0)
+      img = torch.unsqueeze(img, 0).to(device)
       res = model(img)
       bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
       st.text(st_img.name + ": " + labels[torch.argmax(res)])
