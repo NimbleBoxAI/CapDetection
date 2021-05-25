@@ -1,3 +1,4 @@
+#Imports
 import torch
 import streamlit as st
 from PIL import Image
@@ -5,9 +6,10 @@ from torchvision import transforms
 import torch.nn as nn
 import torch.nn.functional as F
 from efficientnet_pytorch import EfficientNet
+
+
 labels = ['Cap Present', 'Cap Missing']
 img_mean, img_std = [0.459], [0.347]
-
 
 
 st.title("Missing Bottlecap Detector")
@@ -20,8 +22,11 @@ st.write("""Upload pictures of Bottle for prediction, you can also upload multip
 st.write("Use the below checkbox for that selection before uploading images")
 combine = st.checkbox("Combine images for the result")
 img_list = st.file_uploader("Upload files here", accept_multiple_files=True)
-models = ["EfficientNet b0", "EfficientNet b3"]
-model_choice = st.radio("Which model do you want to use ?", (models[0], models[1]))
+
+models = ["EfficientNet b0", "EfficientNet b3", "MobileNet v2"]
+model_choice = st.radio("Which model do you want to use ?", (models[0], models[1], models[2]))
+
+
 
 if model_choice == models[0]:
   image_size = (224, 224)
@@ -49,9 +54,17 @@ elif model_choice == models[1]:
         x = self.eff_net(x)
         x = F.softmax(x, dim=1)
         return x
+        
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
   model = EffNet()
   model = torch.load("models/efnet-b3-best-updated.pth", map_location = device)
+
+else:
+  image_size = (256, 256)
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  model = torch.hub.load('pytorch/vision:v0.9.0', 'mobilenet_v2', pretrained=True) 
+  model = torch.load("models/mobilenet-v2-best.pth", map_location = device)
+
 
 model = model.to(device)
 model.eval()
