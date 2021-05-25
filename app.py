@@ -6,6 +6,8 @@ from torchvision import transforms
 import torch.nn as nn
 import torch.nn.functional as F
 from efficientnet_pytorch import EfficientNet
+from infer import get_model, predict, transform_img
+import numpy as np
 
 
 labels = ['Cap Present', 'Cap Missing']
@@ -73,24 +75,25 @@ tfms = transforms.Compose([
                             transforms.ToTensor(),
                             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                         ])
+
+
+segment_net = get_model()
                         
 if len(img_list) != 0:
   res = 0
   bar = st.progress(0)
   for prog, st_img in enumerate(img_list):
-    img = Image.open(st_img)
-    if combine:
-      img = tfms(img)
-      img = torch.unsqueeze(img, 0).to(device)
-      res += model(img)
+    img = Image.open(st_img).convert('RGB')
+    st.image(np.array(img))
+    img_t = transform_img(img).unsqueeze(0)
+    predictions = predict([img], img_t, segment_net)[0]
+    for j in predictions:
+      img = Image.fromarray(j)
+      img_t = tfms(img)
+      img_t = torch.unsqueeze(img_t, 0).to(device)
+      res = model(img_t)
       bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
-    else:
-      img = tfms(img)
-      img = torch.unsqueeze(img, 0).to(device)
-      res = model(img)
-      bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
-      st.text(st_img.name + ": " + labels[torch.argmax(res)])
-  res /= len(img_list)
-  st.text("Predicted Class: " + labels[torch.argmax(res)])
+      st.image(img)
+      st.text("Label: " + labels[torch.argmax(res)])
 else:
   st.text("Please Upload an image")
