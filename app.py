@@ -1,99 +1,70 @@
 #Imports
+from os import path
 import torch
 import streamlit as st
 from PIL import Image
 from torchvision import transforms
 import torch.nn as nn
 import torch.nn.functional as F
-from efficientnet_pytorch import EfficientNet
 from infer import get_model, predict, transform_img
 import numpy as np
 
 
-labels = ['Cap Present', 'Cap Missing']
-img_mean, img_std = [0.459], [0.347]
+
+def get_mobilenet(path, device):
+  image_size = (256, 256)
+  model = torch.load(path, map_location = device)
+  model = model.to(device)
+  return model
+
+def get_transforms(image_size):
+  tfms = transforms.Compose([
+                  transforms.Resize(image_size),
+                  transforms.ToTensor(),
+                  transforms.Normalize(
+                          [0.485, 0.456, 0.406],
+                          [0.229, 0.224, 0.225])
+                          ])
+  return tfms
 
 
-st.title("Missing Bottlecap Detector")
-st.write("""Upload pictures of Bottle for prediction, you can also upload multiple
+def show_result(img_list, tfms, device):
+  labels = ['Cap Present', 'Cap Missing']
+  segment_net = get_model()
+  model = get_mobilenet(path = "models/mobilenet-v3-small-best.pth", device = device)
+  model.eval()
+  if len(img_list) != 0:
+    res = 0
+    bar = st.progress(0)
+    for prog, st_img in enumerate(img_list):
+      img = Image.open(st_img).convert('RGB')
+      st.image(np.array(img))
+      img_t = transform_img(img).unsqueeze(0)
+      predictions = predict([img], img_t, segment_net)[0]
+      for j in predictions:
+        img = Image.fromarray(j)
+        img_t = tfms(img)
+        img_t = torch.unsqueeze(img_t, 0).to(device)
+        res = model(img_t)
+        bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
+        st.image(img)
+        st.text("Label: " + labels[torch.argmax(res)])
+  else:
+    st.text("Please Upload an image")
+
+
+def main():
+  st.title("Missing Bottlecap Detector")
+  st.write("""Upload pictures of Bottle for prediction, you can also upload multiple
             pictures of Bottles to predict multiple results or combine them to improve
             results.""")
-
-
-
-st.write("Use the below checkbox for that selection before uploading images")
-combine = st.checkbox("Combine images for the result")
-img_list = st.file_uploader("Upload files here", accept_multiple_files=True)
-
-models = ["EfficientNet b0", "EfficientNet b3", "MobileNet v2"]
-model_choice = st.radio("Which model do you want to use ?", (models[0], models[1], models[2]))
-
-
-
-if model_choice == models[0]:
-  image_size = (224, 224)
-  class EffNet(nn.Module):
-    def __init__(self):
-        super(EffNet, self).__init__()
-        self.eff_net = EfficientNet.from_pretrained('efficientnet-b0', num_classes=2)
-        self.eff_net.set_swish(memory_efficient=False)
-    def forward(self, x):
-        x = self.eff_net(x)
-        x = F.softmax(x, dim=1)
-        return x
+  st.write("Use the below checkbox for that selection before uploading images")
+  combine = st.checkbox("Combine images for the result")
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  model = EffNet()
-  model = torch.load("models/efnet-b0-best.pth", map_location = device)
+  img_list = st.file_uploader("Upload files here", accept_multiple_files=True)
+  tfms = get_transforms(image_size=(256,256))
+  show_result(img_list, tfms, device)
 
-elif model_choice == models[1]:
-  image_size = (300, 300)
-  class EffNet(nn.Module):
-    def __init__(self):
-        super(EffNet, self).__init__()
-        self.eff_net = EfficientNet.from_pretrained('efficientnet-b3', num_classes=2)
-        self.eff_net.set_swish(memory_efficient=False)
-    def forward(self, x):
-        x = self.eff_net(x)
-        x = F.softmax(x, dim=1)
-        return x
-        
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  model = EffNet()
-  model = torch.load("models/efnet-b3-best-updated.pth", map_location = device)
-
-else:
-  image_size = (256, 256)
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  model = torch.hub.load('pytorch/vision:v0.9.0', 'mobilenet_v2', pretrained=True) 
-  model = torch.load("models/mobilenet-v2-best.pth", map_location = device)
-
-
-model = model.to(device)
-model.eval()
-tfms = transforms.Compose([
-                            transforms.Resize(image_size),
-                            transforms.ToTensor(),
-                            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-                        ])
-
-
-segment_net = get_model()
-                        
-if len(img_list) != 0:
-  res = 0
-  bar = st.progress(0)
-  for prog, st_img in enumerate(img_list):
-    img = Image.open(st_img).convert('RGB')
-    st.image(np.array(img))
-    img_t = transform_img(img).unsqueeze(0)
-    predictions = predict([img], img_t, segment_net)[0]
-    for j in predictions:
-      img = Image.fromarray(j)
-      img_t = tfms(img)
-      img_t = torch.unsqueeze(img_t, 0).to(device)
-      res = model(img_t)
-      bar.progress(int(prog * 100/len(img_list)) + int(100/len(img_list)))
-      st.image(img)
-      st.text("Label: " + labels[torch.argmax(res)])
-else:
-  st.text("Please Upload an image")
+  
+if __name__ == '__main__':
+	main()

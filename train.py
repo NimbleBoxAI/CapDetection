@@ -49,7 +49,7 @@ def train_model(model, criterion, optimizer, dataloaders, dataset_sizes,  num_ep
 
             print("{} Loss: {:.4f} Acc: {:.4f}".format(phase, epoch_loss,epoch_acc))
             if phase == "val" and epoch_acc > best_acc:
-                torch.save(model,"./models/mobilenet-v2-best.pth")
+                torch.save(model,"./models/mobilenet-v3-small-best.pth")
                 best_acc = epoch_acc
 
     time_elapsed = time.time() - start_time
@@ -58,19 +58,48 @@ def train_model(model, criterion, optimizer, dataloaders, dataset_sizes,  num_ep
     return model
 
 
+class Dataset(torch.utils.data.Dataset):
+  def __init__(self, root_path, transforms=None ):
+    self.segment_net = get_model()
+    self.root_path = root_path
+    self.transform_img = transforms
+    self.img_list = []
+    for phase in ["Capped", "NoCap"]:
+        img_root = os.path.join(root_path, phase)
+        for img_name in os.listdir(img_root):
+            img_path = os.path.join(img_root, img_name)
+            self.img_list.append([img_path, phase])
+        
+  def __len__(self):
+    return len(self.img_list)
+             
+  def __getitem__(self, index):
+    img = Image.open(self.img_list[index][0])
+    label = 0 if self.img_list[index][1] == "Capped" else 1
+    img_t = transform_img(img).unsqueeze(0)
+    img_seg = predict([img], img_t, self.segment_net)
+    if len(img_seg[0]) == 0:
+      img_seg = img
+    else:
+      img_seg = img_seg[0][0]
+      img_seg = Image.fromarray(img_seg)
+
+    img_transformed = self.transform_img(img_seg) 
+    return img_transformed, label
+
 def load_data(data_dir, data_transforms):
-    image_datasets = {x: datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ["train", "val"]}
     dataloaders = {}
-    dataloaders["train"] = torch.utils.data.DataLoader(image_datasets["train"], batch_size=8, shuffle=True, num_workers=2) 
-    dataloaders["val"] = torch.utils.data.DataLoader(image_datasets["val"], batch_size=8, shuffle=False, num_workers=2) 
-    dataset_sizes = {x: len(image_datasets[x]) for x in ["train", "val"]}
-    class_names = image_datasets["train"].classes
+    train_dataset = Dataset("Dataset/train", data_transforms["train"])
+    test_dataset = Dataset("Dataset/val", data_transforms["val"])
+    dataloaders["train"] = torch.utils.data.DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2) 
+    dataloaders["val"] = torch.utils.data.DataLoader(test_dataset, batch_size=16, shuffle=False, num_workers=2) 
+    class_names=["Capped",  "NoCap"]
+    dataset_sizes = {"train": len(train_dataset), "val": len(test_dataset)}
     print(class_names)
     return dataloaders, dataset_sizes 
 
 
-def get_transforms(image_size=(256,256)):
-    image_size = (256,256)
+def get_transforms(image_size=(224,224)):
     data_transforms = {
                         "train": transforms.Compose([
                             transforms.Resize(image_size),
@@ -86,15 +115,16 @@ def get_transforms(image_size=(256,256)):
                         }
     return data_transforms
 
+
 def main():
     transforms = get_transforms()
     dataloaders, dataset_sizes = load_data(data_dir = "Dataset/", data_transforms= transforms)
-    model = torch.hub.load('pytorch/vision:v0.9.0', 'mobilenet_v2', pretrained=True)
+    model = model.load("models/mobilenet-v3-small-best.pth")
     model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    model_ft = train_model(model, criterion, optimizer, dataloaders, dataset_sizes, num_epochs=15)
-    torch.save(model_ft,"./models/mobilenet-v2-last.pth")
+    model_ft = train_model(model, criterion, optimizer, dataloaders, dataset_sizes, num_epochs=5)
+    torch.save(model_ft,"./models/mobilenet-v3-small-last.pth")
 
 if __name__ == '__main__':
 	main()
